@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=ros:melodic
+ARG BASE_IMAGE=ros:kinetic
 
 FROM maven AS xsdcache
 
@@ -25,9 +25,9 @@ RUN mkdir -p /opt/xsd/sdf && \
 RUN mkdir -p /opt/xsd/urdf && \
     java -jar schema-fetcher/target/schema-fetcher-1.0.0-SNAPSHOT.jar /opt/xsd/urdf https://raw.githubusercontent.com/devrt/urdfdom/xsd-with-xacro/xsd/urdf.xsd
 
-FROM $BASE_IMAGE
+FROM ros:kinetic
 
-MAINTAINER Yosuke Matsusaka <yosuke.matsusaka@gmail.com>
+MAINTAINER Abiel Fernandez <contact@abiel.dev>
 
 SHELL ["/bin/bash", "-c"]
 
@@ -84,16 +84,6 @@ RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y ros-$ROS_DISTRO-desktop ros-$ROS_DISTRO-moveit ros-$ROS_DISTRO-moveit-commander ros-$ROS_DISTRO-moveit-ros-visualization ros-$ROS_DISTRO-trac-ik ros-$ROS_DISTRO-move-base-msgs ros-$ROS_DISTRO-ros-numpy && \
     apt-get clean
 
-# install bio_ik
-RUN source /opt/ros/$ROS_DISTRO/setup.bash && \
-    mkdir -p /bio_ik_ws/src && \
-    cd /bio_ik_ws/src && \
-    catkin_init_workspace && \
-    git clone --depth=1 https://github.com/TAMS-Group/bio_ik.git && \
-    cd .. && \
-    catkin_make install -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/ros/$ROS_DISTRO -DCATKIN_ENABLE_TESTING=0 && \
-    cd / && rm -r /bio_ik_ws
-
 # configure services
 RUN mkdir -p /etc/supervisor/conf.d
 COPY .devcontainer/supervisord.conf /etc/supervisor/supervisord.conf
@@ -105,6 +95,14 @@ COPY .devcontainer/entrypoint.sh /entrypoint.sh
 COPY .devcontainer/sim.py /usr/bin/sim
 
 COPY --from=xsdcache /opt/xsd /opt/xsd
+
+RUN apt-get update -y && apt-get upgrade -y && apt-get autoremove -y && \
+    apt-get install --no-install-recommends lsb-release wget less udev sudo apt-transport-https -y && \
+    echo ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true | sudo debconf-set-selections && \
+    wget -O ZED_SDK_Linux_Ubuntu16.run https://download.stereolabs.com/zedsdk/2.8/cu102/ubuntu16 && \
+    chmod +x ZED_SDK_Linux_Ubuntu16.run ; ./ZED_SDK_Linux_Ubuntu16.run silent && \
+    rm ZED_SDK_Linux_Ubuntu16.run && \
+    rm -rf /var/lib/apt/lists/*
 
 USER developer
 WORKDIR /home/developer
