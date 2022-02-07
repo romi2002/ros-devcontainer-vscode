@@ -86,13 +86,13 @@ RUN apt-get update && apt-get upgrade -y && \
 
 # configure services
 RUN mkdir -p /etc/supervisor/conf.d
-COPY .devcontainer/supervisord.conf /etc/supervisor/supervisord.conf
-COPY .devcontainer/theia.conf /etc/supervisor/conf.d/theia.conf
-COPY .devcontainer/jupyter.conf /etc/supervisor/conf.d/jupyter.conf
+COPY supervisord.conf /etc/supervisor/supervisord.conf
+COPY theia.conf /etc/supervisor/conf.d/theia.conf
+COPY jupyter.conf /etc/supervisor/conf.d/jupyter.conf
 
-COPY .devcontainer/entrypoint.sh /entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh
 
-COPY .devcontainer/sim.py /usr/bin/sim
+COPY sim.py /usr/bin/sim
 
 COPY --from=xsdcache /opt/xsd /opt/xsd
 
@@ -138,12 +138,12 @@ RUN rosdep update
 # global vscode config
 ADD .vscode /home/developer/.vscode
 ADD .vscode /home/developer/.theia
-ADD .devcontainer/compile_flags.txt /home/developer/compile_flags.txt
-ADD .devcontainer/templates /home/developer/templates
+ADD compile_flags.txt /home/developer/compile_flags.txt
+ADD templates /home/developer/templates
 RUN sudo chown -R developer:developer /home/developer
 
 # install theia web IDE
-COPY .devcontainer/theia-latest.package.json /home/developer/package.json
+COPY theia-latest.package.json /home/developer/package.json
 RUN yarn --cache-folder ./ycache && rm -rf ./ycache && \
     NODE_OPTIONS="--max_old_space_size=4096" yarn theia build && \
     yarn theia download:plugins
