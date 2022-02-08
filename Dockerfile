@@ -96,14 +96,98 @@ COPY sim.py /usr/bin/sim
 
 COPY --from=xsdcache /opt/xsd /opt/xsd
 
+ENV NVARCH x86_64
+ENV NVIDIA_REQUIRE_CUDA "cuda>=10.0 brand=tesla,driver>=384,driver<385 brand=tesla,driver>=410,driver<411"
+ENV NV_CUDA_CUDART_VERSION 10.0.130-1
+
+ENV NV_ML_REPO_ENABLED 1
+ENV NV_ML_REPO_URL https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1604/${NVARCH}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates apt-transport-https gnupg-curl && \
+    NVIDIA_GPGKEY_SUM=d1be581509378368edeec8c1eb2958702feedf3bc3d17011adbf24efacce4ab5 && \
+    NVIDIA_GPGKEY_FPR=ae09fe4bbd223a84b2ccfce3f60f4b3d7fa2af80 && \
+    apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/${NVARCH}/7fa2af80.pub && \
+    apt-key adv --export --no-emit-version -a $NVIDIA_GPGKEY_FPR | tail -n +5 > cudasign.pub && \
+    echo "$NVIDIA_GPGKEY_SUM  cudasign.pub" | sha256sum -c --strict - && rm cudasign.pub && \
+    echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/${NVARCH} /" > /etc/apt/sources.list.d/cuda.list && \
+    if [ ! -z ${NV_ML_REPO_ENABLED} ]; then echo "deb ${NV_ML_REPO_URL} /" > /etc/apt/sources.list.d/nvidia-ml.list; fi && \
+    apt-get purge --auto-remove -y gnupg-curl \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CUDA_VERSION 10.0.130
+
+# For libraries in the cuda-compat-* package: https://docs.nvidia.com/cuda/eula/index.html#attachment-a
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cuda-cudart-10-0=${NV_CUDA_CUDART_VERSION} \
+    cuda-compat-10-0 \
+    && ln -s cuda-10.0 /usr/local/cuda && \
+    rm -rf /var/lib/apt/lists/*
+
+
+# Required for nvidia-docker v1
+RUN echo "/usr/local/nvidia/lib" >> /etc/ld.so.conf.d/nvidia.conf && \
+    echo "/usr/local/nvidia/lib64" >> /etc/ld.so.conf.d/nvidia.conf
+
+ENV PATH /usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
+ENV LD_LIBRARY_PATH /usr/local/nvidia/lib:/usr/local/nvidia/lib64
+
+# nvidia-container-runtime
+ENV NVIDIA_VISIBLE_DEVICES all
+ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
+
+ENV NV_CUDA_LIB_VERSION 10.0.130-1
+ENV NV_CUDA_CUDART_DEV_VERSION 10.0.130-1
+ENV NV_NVML_DEV_VERSION 10.0.130-1
+ENV NV_LIBCUSPARSE_DEV_VERSION 10.0.130-1
+ENV NV_LIBNPP_DEV_VERSION 10.0.130-1
+ENV NV_LIBCUBLAS_DEV_PACKAGE_NAME cuda-cublas-dev-10-0
+
+ENV NV_LIBCUBLAS_DEV_VERSION 10.0.130-1
+ENV NV_LIBCUBLAS_DEV_PACKAGE ${NV_LIBCUBLAS_DEV_PACKAGE_NAME}=${NV_LIBCUBLAS_DEV_VERSION}
+
+ENV NV_LIBNCCL_DEV_PACKAGE_NAME libnccl-dev
+ENV NV_LIBNCCL_DEV_VERSION 2.6.4-1
+ENV NCCL_VERSION ${NV_LIBNCCL_DEV_VERSION}
+ENV NV_LIBNCCL_DEV_PACKAGE ${NV_LIBNCCL_DEV_PACKAGE_NAME}=${NV_LIBNCCL_DEV_VERSION}+cuda10.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cuda-nvml-dev-10-0=${NV_NVML_DEV_VERSION} \
+    cuda-command-line-tools-10-0=${NV_CUDA_LIB_VERSION} \
+    cuda-nvprof-10-0=${NV_CUDA_LIB_VERSION} \
+    cuda-npp-dev-10-0=${NV_LIBNPP_DEV_VERSION} \
+    cuda-libraries-dev-10-0=${NV_CUDA_LIB_VERSION} \
+    cuda-minimal-build-10-0=${NV_CUDA_LIB_VERSION} \
+    libnccl2=2.6.4-1+cuda10.0 \
+    ${NV_LIBCUBLAS_DEV_PACKAGE} \
+    ${NV_LIBNCCL_DEV_PACKAGE} \
+    && rm -rf /var/lib/apt/lists/*
+
+# apt from auto upgrading the cublas package. See https://gitlab.com/nvidia/container-images/cuda/-/issues/88
+RUN apt-mark hold ${NV_LIBCUBLAS_DEV_PACKAGE_NAME} ${NV_LIBNCCL_DEV_PACKAGE_NAME}
+
 RUN apt-get update -y && apt-get upgrade -y && apt-get autoremove -y && \
     apt-get install --no-install-recommends lsb-release wget less udev sudo apt-transport-https -y && \
     echo ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true | sudo debconf-set-selections && \
-    wget -O ZED_SDK_Linux_Ubuntu16.run https://download.stereolabs.com/zedsdk/2.8/cu102/ubuntu16 && \
+    wget -O ZED_SDK_Linux_Ubuntu16.run https://download.stereolabs.com/zedsdk/2.8/cu100/ubuntu16 && \
     chmod +x ZED_SDK_Linux_Ubuntu16.run ; ./ZED_SDK_Linux_Ubuntu16.run silent && \
     rm ZED_SDK_Linux_Ubuntu16.run && \
     rm -rf /var/lib/apt/lists/* && \
     chown developer -R /usr/local/zed
+
+RUN dpkg -r --force-depends nvidia-465-dev
+
+RUN apt-get update -y && apt-get install -y python3 && curl -sS https://bootstrap.pypa.io/pip/3.5/get-pip.py | sudo python3 && rm -rf /var/lib/apt/lists/*
+
+RUN cd / && git clone https://github.com/acados/acados.git && cd acados && ls && \
+    git submodule update --recursive --init && mkdir -p build && cd build && \
+    cmake -DACADOS_INSTALL_DIR=/acados .. && make install -j4 && cp /acados/lib/*.so /usr/lib && \
+    ldconfig
+
+RUN pip3 install wheel && pip3 install -e /acados/interfaces/acados_template
+
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/acados/lib
+ENV ACADOS_SOURCE_DIR=/acados
 
 USER developer
 WORKDIR /home/developer
@@ -129,9 +213,6 @@ RUN echo 'eval "$(register-python-argcomplete sim)"' >> ~/.bashrc
 
 RUN git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf && \
     ~/.fzf/install --all
-
-RUN git clone --depth 1 https://github.com/b4b4r07/enhancd.git ~/.enhancd && \
-    echo "source ~/.enhancd/init.sh" >> ~/.bashrc
 
 # init rosdep
 RUN rosdep update
