@@ -27,13 +27,6 @@ services:
     #   - .env
     image: romi01/ros-devcontainer-vscode:kinetic-desktop
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     security_opt:
     - seccomp:unconfined
     ports:
